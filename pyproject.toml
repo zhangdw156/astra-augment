@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "astra-augment"
+dynamic = ["version"]
+description = "SFT data augmentation via conversation truncation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["click>=8.0"]
+
+[project.scripts]
+astra-augment = "astra_augment.cli:main"
+
+[tool.hatch.version]
+path = "../VERSION"
+pattern = "(?P<version>.+)"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/astra_augment"]
