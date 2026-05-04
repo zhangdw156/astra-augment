@@ -1,0 +1,143 @@
+name: Release On Main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Resolve release metadata
+        id: version
+        run: python .github/scripts/resolve_version.py
+
+      - name: Skip development versions
+        if: ${{ steps.version.outputs.is_release != 'true' }}
+        shell: bash
+        run: |
+          {
+            echo "## Release Skipped"
+            echo
+            echo "- Version: \`${{ steps.version.outputs.version }}\`"
+            echo "- Reason: version contains \`.dev\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fetch tags
+        if: ${{ steps.version.outputs.is_release == 'true' }}
+        run: git fetch --tags --force origin
+
+      - name: Check whether release already exists
+        if: ${{ steps.version.outputs.is_release == 'true' }}
+        id: release_state
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Release Skipped"
+              echo
+              echo "- Version: \`${{ steps.version.outputs.version }}\`"
+              echo "- Tag: \`${tag}\`"
+              echo "- Reason: the GitHub release already exists."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if git show-ref --tags --verify --quiet "refs/tags/${tag}"; then
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build distribution artifacts
+        if: >-
+          ${{
+            steps.version.outputs.is_release == 'true' &&
+            steps.release_state.outputs.release_exists != 'true'
+          }}
+        run: uv build
+
+      - name: Create GitHub release
+        if: >-
+          ${{
+            steps.version.outputs.is_release == 'true' &&
+            steps.release_state.outputs.release_exists != 'true'
+          }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          version="${{ steps.version.outputs.version }}"
+
+          if [[ "${{ steps.release_state.outputs.tag_exists }}" == "true" ]]; then
+            gh release create "$tag" dist/* \
+              --repo "${{ github.repository }}" \
+              --verify-tag \
+              --title "astra-augment ${version}" \
+              --generate-notes
+          else
+            gh release create "$tag" dist/* \
+              --repo "${{ github.repository }}" \
+              --target "${GITHUB_SHA}" \
+              --title "astra-augment ${version}" \
+              --generate-notes
+          fi
+
+      - name: Publish to PyPI
+        if: >-
+          ${{
+            steps.version.outputs.is_release == 'true' &&
+            steps.release_state.outputs.release_exists != 'true'
+          }}
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish dist/*
+
+      - name: Summarize release
+        if: >-
+          ${{
+            steps.version.outputs.is_release == 'true' &&
+            steps.release_state.outputs.release_exists != 'true'
+          }}
+        shell: bash
+        run: |
+          {
+            echo "## Release Published"
+            echo
+            echo "- Version: \`${{ steps.version.outputs.version }}\`"
+            echo "- Tag: \`${{ steps.version.outputs.tag }}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
