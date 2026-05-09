@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .utils import is_assistant, is_tool_call
+from .utils import is_response, is_tool_call
 
 
 def _immediate_response_failed(messages: list[dict[str, Any]], idx: int) -> bool:
@@ -50,7 +50,7 @@ def slice_record(
     if mode == "tool_call":
         indices = [i for i, m in enumerate(messages) if is_tool_call(m)]
     elif mode == "response":
-        indices = [i for i, m in enumerate(messages) if is_assistant(m)]
+        indices = [i for i, m in enumerate(messages) if is_response(m)]
     else:
         raise ValueError(f"Unknown mode: {mode!r}. Use 'tool_call' or 'response'.")
 
