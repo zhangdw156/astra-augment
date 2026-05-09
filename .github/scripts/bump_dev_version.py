@@ -18,6 +18,7 @@ def parse_base(v: str) -> tuple[int, int, int]:
 
 
 def next_dev_version(release: str) -> str:
+    # TODO: only supports minor bumps; extend for major/patch releases
     major, minor, _ = parse_base(release)
     return f"{major}.{minor + 1}.0.dev0"
 
