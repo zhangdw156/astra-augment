@@ -6,13 +6,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-
-def _is_tool_call(msg: dict[str, Any]) -> bool:
-    return msg.get("role") == "assistant" and "<tool_call>" in msg.get("content", "")
-
-
-def _is_assistant(msg: dict[str, Any]) -> bool:
-    return msg.get("role") == "assistant"
+from .utils import is_assistant, is_tool_call
 
 
 def _has_failed_response_after(messages: list[dict[str, Any]], idx: int) -> bool:
@@ -52,7 +46,7 @@ def expand_record(
         return []
 
     if mode == "tool_call":
-        tc_indices = [i for i, m in enumerate(messages) if _is_tool_call(m)]
+        tc_indices = [i for i, m in enumerate(messages) if is_tool_call(m)]
         if not tc_indices:
             return []
         targets = _tail_indices(tc_indices, ratio)
@@ -63,7 +57,7 @@ def expand_record(
         return results
 
     elif mode == "response":
-        asst_indices = [i for i, m in enumerate(messages) if _is_assistant(m)]
+        asst_indices = [i for i, m in enumerate(messages) if is_assistant(m)]
         if not asst_indices:
             return []
         # exclude the very last assistant (that's the original full conversation)
