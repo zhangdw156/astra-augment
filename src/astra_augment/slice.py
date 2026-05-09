@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -55,11 +57,17 @@ def slice_at(
 
     kept = 0
     total = 0
-    with open(output_path, "w") as fout:
-        for record in read_jsonl(input_path):
-            total += 1
-            result = slice_record(record, last, mode)
-            if result is not None:
-                fout.write(json.dumps(result, ensure_ascii=False) + "\n")
-                kept += 1
+    fd, tmp = tempfile.mkstemp(dir=output_path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as fout:
+            for record in read_jsonl(input_path):
+                total += 1
+                result = slice_record(record, last, mode)
+                if result is not None:
+                    fout.write(json.dumps(result, ensure_ascii=False) + "\n")
+                    kept += 1
+        Path(tmp).replace(output_path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
     return kept, total

@@ -12,7 +12,13 @@ def is_tool_call(msg: dict[str, Any]) -> bool:
 
 
 def is_response(msg: dict[str, Any]) -> bool:
-    return msg.get("role") == "assistant" and "<tool_call>" not in msg.get("content", "")
+    content = msg.get("content")
+    return (
+        msg.get("role") == "assistant"
+        and isinstance(content, str)
+        and bool(content)
+        and "<tool_call>" not in content
+    )
 
 
 def find_indices(messages: list[dict[str, Any]], mode: str) -> list[int]:
@@ -32,9 +38,10 @@ def immediate_response_failed(messages: list[dict[str, Any]], idx: int) -> bool:
         if role in ("user", "assistant"):
             return False
         if "<tool_response>" in content:
-            start = content.find("<tool_response>") + len("<tool_response>")
+            start_pos = content.find("<tool_response>")
             end = content.find("</tool_response>")
-            if 0 <= start < end:
+            if start_pos >= 0 and end > start_pos:
+                start = start_pos + len("<tool_response>")
                 try:
                     parsed = json.loads(content[start:end].strip())
                     return isinstance(parsed, dict) and parsed.get("success") is False
@@ -46,8 +53,11 @@ def immediate_response_failed(messages: list[dict[str, Any]], idx: int) -> bool:
 
 def read_jsonl(path: Path) -> Iterator[dict[str, Any]]:
     with open(path) as f:
-        for line in f:
+        for lineno, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
-            yield json.loads(line)
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"{path}:{lineno}: invalid JSON: {e}") from e
