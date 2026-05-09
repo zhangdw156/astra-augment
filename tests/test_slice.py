@@ -285,3 +285,11 @@ class TestSliceAt:
                 tmp_path / "in.jsonl", tmp_path / "out.jsonl",
                 last=1, mode="tool_call", format="llama",
             )
+
+    def test_no_partial_output_on_bad_input(self, tmp_path):
+        input_path = tmp_path / "input.jsonl"
+        output_path = tmp_path / "output.jsonl"
+        input_path.write_text(json.dumps(MULTI_TC_RECORD) + "\nBAD JSON\n")
+        with pytest.raises(ValueError, match="invalid JSON"):
+            slice_at(input_path, output_path, last=1, mode="tool_call")
+        assert not output_path.exists()

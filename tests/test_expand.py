@@ -162,3 +162,18 @@ class TestExpand:
                 tmp_path / "in.jsonl", tmp_path / "out.jsonl",
                 ratio=0.5, mode="tool_call", format="llama",
             )
+
+    def test_no_partial_output_on_bad_input(self, tmp_path):
+        input_path = tmp_path / "input.jsonl"
+        output_path = tmp_path / "output.jsonl"
+        input_path.write_text(
+            json.dumps({"messages": [
+                _msg("user", "q"),
+                _msg("assistant", "<tool_call>x</tool_call>"),
+                _msg("tool", '<tool_response>{"success": true}</tool_response>'),
+                _msg("assistant", "done"),
+            ]}) + "\nBAD JSON\n"
+        )
+        with pytest.raises(ValueError, match="invalid JSON"):
+            expand(input_path, output_path, ratio=1.0, mode="tool_call")
+        assert not output_path.exists()

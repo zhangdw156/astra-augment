@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -61,9 +63,15 @@ def expand(
         raise ValueError(f"ratio must be in (0, 1], got {ratio}")
 
     count = 0
-    with open(output_path, "w") as fout:
-        for record in read_jsonl(input_path):
-            for aug in expand_record(record, ratio, mode):
-                fout.write(json.dumps(aug, ensure_ascii=False) + "\n")
-                count += 1
+    fd, tmp = tempfile.mkstemp(dir=output_path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as fout:
+            for record in read_jsonl(input_path):
+                for aug in expand_record(record, ratio, mode):
+                    fout.write(json.dumps(aug, ensure_ascii=False) + "\n")
+                    count += 1
+        Path(tmp).replace(output_path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
     return count
