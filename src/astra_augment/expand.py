@@ -6,27 +6,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from .utils import is_assistant, is_tool_call
-
-
-def _has_failed_response_after(messages: list[dict[str, Any]], idx: int) -> bool:
-    """Check if any tool_response after idx contains a failure."""
-    for msg in messages[idx + 1 :]:
-        content = msg.get("content", "")
-        if "<tool_response>" not in content:
-            continue
-        start = content.find("<tool_response>") + len("<tool_response>")
-        end = content.find("</tool_response>")
-        if start < 0 or end < 0:
-            continue
-        body = content[start:end].strip()
-        try:
-            parsed = json.loads(body)
-            if isinstance(parsed, dict) and parsed.get("success") is False:
-                return True
-        except (json.JSONDecodeError, TypeError):
-            pass
-    return False
+from .utils import find_indices, immediate_response_failed, read_jsonl
 
 
 def _tail_indices(indices: list[int], ratio: float) -> list[int]:
@@ -45,30 +25,26 @@ def expand_record(
     if len(messages) < 3:
         return []
 
+    indices = find_indices(messages, mode)
+
     if mode == "tool_call":
-        tc_indices = [i for i, m in enumerate(messages) if is_tool_call(m)]
-        if not tc_indices:
+        if not indices:
             return []
-        targets = _tail_indices(tc_indices, ratio)
+        targets = _tail_indices(indices, ratio)
         results = []
         for idx in targets:
-            if not _has_failed_response_after(messages, idx):
+            if not immediate_response_failed(messages, idx):
                 results.append({"messages": messages[: idx + 1]})
         return results
 
     elif mode == "response":
-        asst_indices = [i for i, m in enumerate(messages) if is_assistant(m)]
-        if not asst_indices:
+        if len(indices) < 2:
             return []
-        # exclude the very last assistant (that's the original full conversation)
-        if len(asst_indices) < 2:
-            return []
-        candidates = asst_indices[:-1]
+        candidates = indices[:-1]
         targets = _tail_indices(candidates, ratio)
         return [{"messages": messages[: idx + 1]} for idx in targets]
 
-    else:
-        raise ValueError(f"Unknown mode: {mode!r}. Use 'tool_call' or 'response'.")
+    return []
 
 
 def expand(
@@ -85,12 +61,8 @@ def expand(
         raise ValueError(f"ratio must be in (0, 1], got {ratio}")
 
     count = 0
-    with open(input_path) as fin, open(output_path, "w") as fout:
-        for line in fin:
-            line = line.strip()
-            if not line:
-                continue
-            record = json.loads(line)
+    with open(output_path, "w") as fout:
+        for record in read_jsonl(input_path):
             for aug in expand_record(record, ratio, mode):
                 fout.write(json.dumps(aug, ensure_ascii=False) + "\n")
                 count += 1

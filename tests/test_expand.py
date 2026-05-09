@@ -68,6 +68,20 @@ class TestExpandRecordToolCall:
         assert len(results) == 2
         assert results[-1]["messages"][-1]["content"] == "<tool_call>3</tool_call>"
 
+    def test_only_checks_immediate_response(self):
+        record = _make_record([
+            _msg("user", "q1"),
+            _msg("assistant", "<tool_call>first</tool_call>"),
+            _msg("tool", '<tool_response>{"success": true}</tool_response>'),
+            _msg("user", "q2"),
+            _msg("assistant", "<tool_call>second</tool_call>"),
+            _msg("tool", '<tool_response>{"success": false}</tool_response>'),
+            _msg("assistant", "done"),
+        ])
+        results = expand_record(record, ratio=1.0, mode="tool_call")
+        assert len(results) == 1
+        assert results[0]["messages"][-1]["content"] == "<tool_call>first</tool_call>"
+
 
 class TestExpandRecordResponse:
     def test_basic_response_truncation(self):
@@ -91,6 +105,19 @@ class TestExpandRecordResponse:
         ])
         results = expand_record(record, ratio=1.0, mode="response")
         assert results == []
+
+    def test_excludes_tool_call_messages(self):
+        record = _make_record([
+            _msg("user", "q1"),
+            _msg("assistant", "<tool_call>x</tool_call>"),
+            _msg("tool", '<tool_response>{"success": true}</tool_response>'),
+            _msg("assistant", "a1"),
+            _msg("user", "q2"),
+            _msg("assistant", "a2"),
+        ])
+        results = expand_record(record, ratio=1.0, mode="response")
+        assert len(results) == 1
+        assert results[0]["messages"][-1]["content"] == "a1"
 
     def test_unknown_mode_raises(self):
         record = _make_record([
