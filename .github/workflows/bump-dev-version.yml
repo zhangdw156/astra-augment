@@ -1,0 +1,54 @@
+name: Bump Dev Version
+
+on:
+  workflow_run:
+    workflows: ["Release On Main"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout dev branch
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Get released version from main
+        id: released
+        run: |
+          version=$(git show origin/main:VERSION | tr -d '[:space:]')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Skip development versions
+        if: contains(steps.released.outputs.version, '.dev')
+        run: echo "Main branch has a dev version, nothing to bump."
+
+      - name: Bump dev version
+        if: ${{ !contains(steps.released.outputs.version, '.dev') }}
+        run: python .github/scripts/bump_dev_version.py "${{ steps.released.outputs.version }}"
+
+      - name: Commit and push
+        if: ${{ !contains(steps.released.outputs.version, '.dev') }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet VERSION; then
+            echo "No changes to commit."
+          else
+            new_version=$(cat VERSION | tr -d '[:space:]')
+            git add VERSION
+            git commit -m "chore: bump dev version to ${new_version}"
+            git push origin dev
+          fi
