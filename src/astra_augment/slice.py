@@ -5,27 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .utils import is_response, is_tool_call
-
-
-def _immediate_response_failed(messages: list[dict[str, Any]], idx: int) -> bool:
-    """Check if the tool_response immediately following idx is a failure."""
-    for msg in messages[idx + 1 :]:
-        role = msg.get("role", "")
-        content = msg.get("content", "")
-        if role in ("user", "assistant"):
-            return False
-        if "<tool_response>" in content:
-            start = content.find("<tool_response>") + len("<tool_response>")
-            end = content.find("</tool_response>")
-            if 0 <= start < end:
-                try:
-                    parsed = json.loads(content[start:end].strip())
-                    return isinstance(parsed, dict) and parsed.get("success") is False
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            return False
-    return False
+from .utils import find_indices, immediate_response_failed, read_jsonl
 
 
 def slice_record(
@@ -47,19 +27,14 @@ def slice_record(
     if len(messages) < 3:
         return None
 
-    if mode == "tool_call":
-        indices = [i for i, m in enumerate(messages) if is_tool_call(m)]
-    elif mode == "response":
-        indices = [i for i, m in enumerate(messages) if is_response(m)]
-    else:
-        raise ValueError(f"Unknown mode: {mode!r}. Use 'tool_call' or 'response'.")
+    indices = find_indices(messages, mode)
 
     if not indices or last > len(indices):
         return None
 
     idx = indices[-last]
 
-    if mode == "tool_call" and _immediate_response_failed(messages, idx):
+    if mode == "tool_call" and immediate_response_failed(messages, idx):
         return None
 
     return {"messages": messages[: idx + 1]}
@@ -80,13 +55,9 @@ def slice_at(
 
     kept = 0
     total = 0
-    with open(input_path) as fin, open(output_path, "w") as fout:
-        for line in fin:
-            line = line.strip()
-            if not line:
-                continue
+    with open(output_path, "w") as fout:
+        for record in read_jsonl(input_path):
             total += 1
-            record = json.loads(line)
             result = slice_record(record, last, mode)
             if result is not None:
                 fout.write(json.dumps(result, ensure_ascii=False) + "\n")
